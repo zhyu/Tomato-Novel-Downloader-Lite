@@ -33,8 +33,7 @@ CONFIG = {
         "http://fan.jingluo.love/content?item_id={chapter_id}",
         "http://apifq.jingluo.love/content?item_id={chapter_id}",
         "http://rehaofan.jingluo.love/content?item_id={chapter_id}",
-        "http://yuefanqie.jingluo.love/content?item_id={chapter_id}",
-        "http://189.1.216.209:5000/reader?item_id={chapter_id}&book_id={book_id}&tone_id=-1&key=uSo1sPoqQypQEF8k&device=android"
+        "http://yuefanqie.jingluo.love/content?item_id={chapter_id}"
     ]
 }
 
@@ -59,25 +58,10 @@ def down_text(chapter_id, headers, book_id=None):
                               for endpoint in CONFIG["api_endpoints"]}
     
     while True:
-        sorted_endpoints = sorted(
-            CONFIG["api_endpoints"],
-            key=lambda x: (
-                0 if "189.1.216.209" in x else 1,
-                down_text.api_status[x]["last_response_time"]
-            )
-        )
+        shuffled_endpoints = random.sample(CONFIG["api_endpoints"], len(CONFIG["api_endpoints"]))
         
-        for api_endpoint in sorted_endpoints:
-            # 格式化URL
-            if "{book_id}" in api_endpoint:
-                if not book_id:
-                    continue
-                current_endpoint = api_endpoint.format(
-                    chapter_id=chapter_id,
-                    book_id=book_id
-                )
-            else:
-                current_endpoint = api_endpoint.format(chapter_id=chapter_id)
+        for api_endpoint in shuffled_endpoints:
+            current_endpoint = api_endpoint.format(chapter_id=chapter_id)
             
             try:
                 # 随机延迟
@@ -95,18 +79,8 @@ def down_text(chapter_id, headers, book_id=None):
                 
                 data = response.json()
                 
-                # 处理API端点响应
-                if "189.1.216.209" in api_endpoint:
-                    content = data.get("content", "") or data.get("data", {}).get("content", "")
-                    chapter_title = data.get("title", "")
-                    if not chapter_title:
-                        if "<h1" in content:
-                            chapter_title = re.search(r'<h1[^>]*>(.*?)</h1>', content).group(1)
-                        elif "<title" in content:
-                            chapter_title = re.search(r'<title[^>]*>(.*?)</title>', content).group(1)
-                else:
-                    content = data.get("data", {}).get("content", "")
-                    chapter_title = data.get("data", {}).get("title", "")
+                content = data.get("data", {}).get("content", "")
+                chapter_title = data.get("data", {}).get("title", "")
                 
                 # 统一处理标题
                 if not chapter_title and "<div class=\"tt-title\">" in content:
@@ -118,8 +92,6 @@ def down_text(chapter_id, headers, book_id=None):
                     # 提取内容段落
                     if "lsjk.zyii.xyz" in api_endpoint:
                         paragraphs = re.findall(r'<p idx="\d+">(.*?)</p>', content)
-                    elif "189.1.216.209" in api_endpoint:
-                        paragraphs = re.findall(r'<p>(.*?)</p>', content) if "<p>" in content else [content]
                     else:
                         paragraphs = re.findall(r'<p>(.*?)</p>', content)
                     
@@ -133,11 +105,6 @@ def down_text(chapter_id, headers, book_id=None):
                 
             except Exception as e:
                 print(f"API端点 {api_endpoint} 请求失败: {str(e)}")
-                if "189.1.216.209" in api_endpoint:
-                    print(f"调试信息 - URL: {current_endpoint}")
-                    if 'response' in locals():
-                        print(f"状态码: {response.status_code}")
-                        print(f"响应片段: {response.text[:200]}...")
                 time.sleep(3)
 
 def get_chapters_from_api(book_id, headers):
@@ -358,6 +325,8 @@ def main():
 Github：https://github.com/Dlmily/Tomato-Novel-Downloader-Lite
 赞助/了解新产品：https://afdian.com/a/dlbaokanluntanos
 *使用前须知*：开始下载之后，您可能会过于着急而查看下载文件的位置，这是徒劳的，请耐心等待小说下载完成再查看！另外如果你要下载之前已经下载过的小说(在此之前已经删除了原txt文件)，那么你有可能会遇到"所有章节已是最新，无需下载"的情况，这时就请删除掉chapter.json，然后再次运行程序。
+
+注：由于api管控很严，敏感的api中使得用户根本无法获取内容，当前版本只有“lsjk.zyii.xyz”api的开发者正在搬家，所以api暂时关闭，所以如果有另外的api，按照您的意愿投到“Issues”页中。
 ------------------------------------------""")
     
     while True:
