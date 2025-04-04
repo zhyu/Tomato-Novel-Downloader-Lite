@@ -18,11 +18,12 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # 全局配置
 CONFIG = {
-    "max_workers": 4,
+    "max_workers": 3,
     "max_retries": 3,
     "request_timeout": 15,
     "status_file": "chapter.json",
     "api_endpoints": [
+        "https://api.cenguigui.cn/api/tomato/content.php?item_id={chapter_id}",
         "https://lsjk.zyii.xyz:3666/content?item_id={chapter_id}",
         "http://api.jingluo.love/content?item_id={chapter_id}",
         "http://apifq.jingluo.love/content?item_id={chapter_id}",
@@ -62,40 +63,56 @@ def down_text(chapter_id, headers, book_id=None):
             "last_try_time": 0
         } for endpoint in CONFIG["api_endpoints"]}
     
-    while True:
-        sorted_endpoints = sorted(
-            CONFIG["api_endpoints"],
-            key=lambda x: (
-                down_text.api_status[x]["error_count"],
-                down_text.api_status[x]["last_response_time"],
-                down_text.api_status[x]["last_try_time"]
-            )
-        )
+    # 顺序尝试API
+    for api_endpoint in CONFIG["api_endpoints"]:
+        current_endpoint = api_endpoint.format(chapter_id=chapter_id)
+        down_text.api_status[api_endpoint]["last_try_time"] = time.time()
         
-        for api_endpoint in sorted_endpoints:
-            current_endpoint = api_endpoint.format(chapter_id=chapter_id)
-            down_text.api_status[api_endpoint]["last_try_time"] = time.time()
+        try:
+            # 随机延迟
+            time.sleep(random.uniform(0.5, 1))
             
-            try:
-                # 随机延迟
-                time.sleep(random.uniform(0.5, 1))
-                
-                start_time = time.time()
-                response = requests.get(
-                    current_endpoint, 
-                    headers=headers, 
-                    timeout=CONFIG["request_timeout"],
-                    verify=False
-                )
-                response_time = time.time() - start_time
-                
-                # 更新API状态
-                down_text.api_status[api_endpoint].update({
-                    "last_response_time": response_time,
-                    "error_count": max(0, down_text.api_status[api_endpoint]["error_count"] - 1)
-                })
-                
-                data = response.json()
+            start_time = time.time()
+            response = requests.get(
+                current_endpoint, 
+                headers=headers, 
+                timeout=CONFIG["request_timeout"],
+                verify=False
+            )
+            response_time = time.time() - start_time
+            
+            # 更新API状态
+            down_text.api_status[api_endpoint].update({
+                "last_response_time": response_time,
+                "error_count": max(0, down_text.api_status[api_endpoint]["error_count"] - 1)
+            })
+            
+            data = response.json()
+            
+            # 处理格式
+            if "api.cenguigui.cn" in api_endpoint:
+                if data.get("code") == 200:
+                    content = data.get("data", {}).get("content", "")
+                    chapter_title = data.get("data", {}).get("title", "")
+                    
+                    # 内容处理
+                    content = re.sub(r'<header>.*?</header>', '', content, flags=re.DOTALL)
+                    content = re.sub(r'<footer>.*?</footer>', '', content, flags=re.DOTALL)
+                    content = re.sub(r'</?article>', '', content)
+                    content = re.sub(r'<p idx="\d+">', '\n', content)
+                    content = re.sub(r'</p>', '\n', content)
+                    content = re.sub(r'<[^>]+>', '', content)
+                    content = re.sub(r'\\u003c|\\u003e', '', content)
+                    
+                    # 处理重复章节标题
+                    if chapter_title and content.startswith(chapter_title):
+                        content = content[len(chapter_title):].lstrip()
+                    
+                    content = re.sub(r'\n{2,}', '\n', content).strip()
+                    formatted_content = '\n'.join(['    ' + line if line.strip() else line for line in content.split('\n')])
+                    return chapter_title, formatted_content
+            else:
+                # jl内容处理
                 content = data.get("data", {}).get("content", "")
                 chapter_title = data.get("data", {}).get("title", "")
                 
@@ -117,14 +134,18 @@ def down_text(chapter_id, headers, book_id=None):
                     formatted_content = '\n'.join('    ' + line if line.strip() else line 
                                                 for line in cleaned_content.split('\n'))
                     return chapter_title, formatted_content
-                
-                print(f"API端点 {api_endpoint} 返回空内容，继续尝试...")
-                down_text.api_status[api_endpoint]["error_count"] += 1
-                
-            except Exception as e:
-                print(f"API端点 {api_endpoint} 请求失败: {str(e)}")
-                down_text.api_status[api_endpoint]["error_count"] += 1
-                time.sleep(3)
+            
+            print(f"API端点 {api_endpoint} 返回空内容，继续尝试下一个API...")
+            down_text.api_status[api_endpoint]["error_count"] += 1
+            
+        except Exception as e:
+            print(f"API端点 {api_endpoint} 请求失败: {str(e)}")
+            down_text.api_status[api_endpoint]["error_count"] += 1
+            time.sleep(3)
+    
+    # 所有API都尝试失败
+    print(f"所有API尝试失败，无法下载章节 {chapter_id}")
+    return None, None
 
 def get_chapters_from_api(book_id, headers):
     """从API获取章节列表"""
