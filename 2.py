@@ -16,11 +16,6 @@ from typing import Optional, Dict
 # 禁用SSL证书验证警告
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-# 初始化动态UA生成器
-ua = UserAgent(
-    fallback="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
-)
-
 # 全局配置
 CONFIG = {
     "max_workers": 4,
@@ -30,17 +25,24 @@ CONFIG = {
     "api_endpoints": [
         "https://lsjk.zyii.xyz:3666/content?item_id={chapter_id}",
         "http://api.jingluo.love/content?item_id={chapter_id}",
-        "http://fan.jingluo.love/content?item_id={chapter_id}",
         "http://apifq.jingluo.love/content?item_id={chapter_id}",
-        "http://rehaofan.jingluo.love/content?item_id={chapter_id}",
-        "http://yuefanqie.jingluo.love/content?item_id={chapter_id}"
+        "http://rehaofan.jingluo.love/content?item_id={chapter_id}"
     ]
 }
 
+# 随机UA生成
 def get_headers() -> Dict[str, str]:
     """生成随机请求头"""
+    browsers = ['chrome', 'edge']
+    browser = random.choice(browsers)
+    
+    if browser == 'chrome':
+        user_agent = UserAgent().chrome
+    else:
+        user_agent = UserAgent().edge
+    
     return {
-        "User-Agent": ua.random,
+        "User-Agent": user_agent,
         "Accept": "application/json, text/javascript, */*; q=0.01",
         "Accept-Language": "zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7",
         "Referer": "https://fanqienovel.com/",
@@ -54,14 +56,25 @@ def down_text(chapter_id, headers, book_id=None):
     
     # 初始化API端点状态
     if not hasattr(down_text, "api_status"):
-        down_text.api_status = {endpoint: {"last_response_time": float('inf')} 
-                              for endpoint in CONFIG["api_endpoints"]}
+        down_text.api_status = {endpoint: {
+            "last_response_time": float('inf'),
+            "error_count": 0,
+            "last_try_time": 0
+        } for endpoint in CONFIG["api_endpoints"]}
     
     while True:
-        shuffled_endpoints = random.sample(CONFIG["api_endpoints"], len(CONFIG["api_endpoints"]))
+        sorted_endpoints = sorted(
+            CONFIG["api_endpoints"],
+            key=lambda x: (
+                down_text.api_status[x]["error_count"],
+                down_text.api_status[x]["last_response_time"],
+                down_text.api_status[x]["last_try_time"]
+            )
+        )
         
-        for api_endpoint in shuffled_endpoints:
+        for api_endpoint in sorted_endpoints:
             current_endpoint = api_endpoint.format(chapter_id=chapter_id)
+            down_text.api_status[api_endpoint]["last_try_time"] = time.time()
             
             try:
                 # 随机延迟
@@ -75,10 +88,14 @@ def down_text(chapter_id, headers, book_id=None):
                     verify=False
                 )
                 response_time = time.time() - start_time
-                down_text.api_status[api_endpoint]["last_response_time"] = response_time
+                
+                # 更新API状态
+                down_text.api_status[api_endpoint].update({
+                    "last_response_time": response_time,
+                    "error_count": max(0, down_text.api_status[api_endpoint]["error_count"] - 1)
+                })
                 
                 data = response.json()
-                
                 content = data.get("data", {}).get("content", "")
                 chapter_title = data.get("data", {}).get("title", "")
                 
@@ -102,9 +119,11 @@ def down_text(chapter_id, headers, book_id=None):
                     return chapter_title, formatted_content
                 
                 print(f"API端点 {api_endpoint} 返回空内容，继续尝试...")
+                down_text.api_status[api_endpoint]["error_count"] += 1
                 
             except Exception as e:
                 print(f"API端点 {api_endpoint} 请求失败: {str(e)}")
+                down_text.api_status[api_endpoint]["error_count"] += 1
                 time.sleep(3)
 
 def get_chapters_from_api(book_id, headers):
@@ -266,6 +285,7 @@ def Run(book_id, save_path):
         success_count = 0
         failed_chapters = []
         chapter_results = {}
+        remaining_chapters = todo_chapters.copy()
         lock = threading.Lock()
         
         def download_task(chapter, book_id):
@@ -281,19 +301,31 @@ def Run(book_id, save_path):
                             "content": content
                         }
                         success_count += 1
+                        remaining_chapters.remove(chapter)
+                else:
+                    print(f"章节 {chapter['title']} 下载失败，将重试...")
             except Exception as e:
-                with lock:
-                    failed_chapters.append(chapter["title"])
+                print(f"章节 {chapter['title']} 下载异常: {str(e)}，将重试...")
         
-        # 多线程下载
-        with ThreadPoolExecutor(max_workers=CONFIG["max_workers"]) as executor:
-            futures = [executor.submit(download_task, ch, book_id) for ch in todo_chapters]
+        # 持续尝试直到下载完成
+        attempt = 1
+        while remaining_chapters:
+            print(f"\n第 {attempt} 次尝试，剩余 {len(remaining_chapters)} 个章节...")
+            attempt += 1
             
-            # 显示进度条
-            with tqdm(total=len(todo_chapters), desc="下载进度") as pbar:
-                for future in as_completed(futures):
-                    pbar.update(1)
-        
+            # 剩余章节
+            current_batch = remaining_chapters.copy()
+            
+            with ThreadPoolExecutor(max_workers=CONFIG["max_workers"]) as executor:
+                futures = [executor.submit(download_task, ch, book_id) for ch in current_batch]
+                
+                with tqdm(total=len(current_batch), desc="下载进度") as pbar:
+                    for future in as_completed(futures):
+                        pbar.update(1)
+            
+            if remaining_chapters:
+                time.sleep(1)
+
         # 按章节顺序写入文件
         with open(output_file_path, 'a', encoding='utf-8') as f:
             for index in sorted(chapter_results.keys()):
@@ -309,12 +341,7 @@ def Run(book_id, save_path):
         # 保存下载状态
         save_status(save_path, downloaded)
 
-        if failed_chapters:
-            print(f"\n以下章节下载失败: {', '.join(failed_chapters)}")
-            with open(os.path.join(save_path, "failed_chapters.txt"), 'w', encoding='utf-8') as f:
-                f.write("\n".join(failed_chapters))
-
-        print(f"下载完成！成功: {success_count}, 失败: {len(todo_chapters)-success_count}")
+        print(f"下载完成！成功下载 {success_count} 个章节")
 
     except Exception as e:
         print(f"运行过程中发生错误: {str(e)}")
