@@ -1,10 +1,9 @@
-name: Auto Build Python Executable
+name: Build and Release Tomato Novel Downloader
 
 on:
   push:
     branches: [ "main" ]
-    tags: [ "v*" ]
-  pull_request:
+    tags: [ "v*" ]  # 打标签时触发发布
 
 jobs:
   build-linux:
@@ -16,7 +15,7 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.13'
+          python-version: "3.12"  # 使用稳定版本
 
       - name: Cache Dependencies
         uses: actions/cache@v4
@@ -29,8 +28,7 @@ jobs:
       - name: Install Dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install pyinstaller
+          pip install pyinstaller requests bs4 fake-useragent tqdm urllib3
 
       - name: Build Executable
         run: |
@@ -48,16 +46,16 @@ jobs:
             --collect-data fake_useragent \
             --name=TomatoNovelDownloader-Linux_amd64-$VERSION \
             --clean \
-            main.py
-      
-      - name: Upload Linux Artifact
+            2.py
+
+      - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: linux-build
-          path: dist/TomatoNovelDownloader-*
+          path: dist/TomatoNovelDownloader-Linux_amd64-*
 
   build-linux-arm64:
-    runs-on: ubuntu-24.04-arm  # 使用ARM64架构的运行器
+    runs-on: ubuntu-24.04-arm
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -65,21 +63,12 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.13'
-
-      - name: Cache Dependencies
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
-          restore-keys: |
-            ${{ runner.os }}-pip-
+          python-version: "3.12"
 
       - name: Install Dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install pyinstaller
+          pip install pyinstaller requests bs4 fake-useragent tqdm urllib3
 
       - name: Build Executable
         run: |
@@ -97,13 +86,13 @@ jobs:
             --collect-data fake_useragent \
             --name=TomatoNovelDownloader-Linux_arm64-$VERSION \
             --clean \
-            main.py
-      
-      - name: Upload Linux ARM64 Artifact
+            2.py
+
+      - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: linux-arm64-build
-          path: dist/TomatoNovelDownloader-*
+          path: dist/TomatoNovelDownloader-Linux_arm64-*
 
   build-windows:
     runs-on: windows-latest
@@ -114,21 +103,7 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.13'
-
-      - name: Cache Dependencies
-        uses: actions/cache@v4
-        with:
-          path: ~\AppData\Local\pip\Cache
-          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
-          restore-keys: |
-            ${{ runner.os }}-pip-
-
-      - name: Install Dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install pyinstaller
+          python-version: "3.12"
 
       - name: Download UPX
         run: |
@@ -136,10 +111,14 @@ jobs:
           Invoke-WebRequest -Uri $url -OutFile upx.zip
           Expand-Archive -Path upx.zip -DestinationPath upx
 
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyinstaller requests bs4 fake-useragent tqdm urllib3
+
       - name: Build Executable
         run: |
           $upxDir = "$pwd\upx\upx-5.0.0-win64"
-        
           if (Test-Path "$upxDir\upx.exe") {
               icacls "$upxDir\upx.exe" /grant Everyone:F
           }
@@ -149,19 +128,19 @@ jobs:
           } else {
             $version = "sha-${{ github.sha }}"
           }
-        
+
           pyinstaller --onefile `
             --upx-dir "$upxDir" `
             --collect-data fake_useragent `
             --name=TomatoNovelDownloader-Win64-$version `
             --clean `
-            main.py
-      
-      - name: Upload Windows Artifact
+            2.py
+
+      - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: windows-build
-          path: dist\TomatoNovelDownloader-*.exe
+          path: dist\TomatoNovelDownloader-Win64-*.exe
 
   build-macos:
     runs-on: macos-latest
@@ -172,24 +151,15 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.13'
-
-      - name: Cache Dependencies
-        uses: actions/cache@v4
-        with:
-          path: ~/Library/Caches/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
-          restore-keys: |
-            ${{ runner.os }}-pip-
+          python-version: "3.12"
 
       - name: Install Dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install pyinstaller
+          pip install pyinstaller requests bs4 fake-useragent tqdm urllib3
 
       - name: Build Executable
-        run: |         
+        run: |
           if [ "${{ github.ref_type }}" = "tag" ]; then
             VERSION="${{ github.ref_name }}"
           else
@@ -204,9 +174,9 @@ jobs:
             --collect-data fake_useragent \
             --name=TomatoNovelDownloader-macOS_arm64-$VERSION \
             --clean \
-            main.py
+            2.py
 
-      - name: Upload macOS Artifact
+      - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: macos-build
@@ -215,26 +185,33 @@ jobs:
   publish-release:
     needs: [build-linux, build-linux-arm64, build-windows, build-macos]
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
-    
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
+    if: startsWith(github.ref, 'refs/tags/v')  # 仅打标签时发布
 
+    steps:
       - name: Download All Artifacts
         uses: actions/download-artifact@v4
         with:
           path: release-artifacts
 
-      - name: List Artifacts
-        run: ls -R release-artifacts
-
-      - name: Create Unified Release
+      - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
           files: |
-            release-artifacts/linux-build/TomatoNovelDownloader-Linux_amd64-*
-            release-artifacts/linux-arm64-build/TomatoNovelDownloader-Linux_arm64-*
-            release-artifacts/windows-build/TomatoNovelDownloader-Win64-*.exe
-            release-artifacts/macos-build/TomatoNovelDownloader-macOS_arm64-*
+            release-artifacts/linux-build/*
+            release-artifacts/linux-arm64-build/*
+            release-artifacts/windows-build/*.exe
+            release-artifacts/macos-build/*
+          body: |
+            **番茄小说下载器 ${{ github.ref_name }}**  
+            a **支持平台**：  
+            - Linux (x86_64/ARM64)  
+            - Windows (UPX 压缩)  
+            - macOS (ARM64)  
+
+            b **包含文件**：  
+            - `TomatoNovelDownloader-Linux_*`  
+            - `TomatoNovelDownloader-Win64-*.exe`  
+            - `TomatoNovelDownloader-macOS_*`  
+
+            c **源码地址**: https://github.com/${{ github.repository }}
