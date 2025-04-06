@@ -7,6 +7,8 @@ import random
 import json
 import urllib3
 import threading
+import signal
+import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from tqdm import tqdm
 from collections import OrderedDict
@@ -198,7 +200,10 @@ def download_chapter(chapter, headers, save_path, book_name, downloaded, book_id
                 else:
                     f.write(f'{chapter["title"]}\n')
                 f.write(content + '\n\n')
+            
+            # 立即更新下载状态
             downloaded.add(chapter["id"])
+            save_status(save_path, downloaded)
             return chapter["index"], content
         except Exception as e:
             print(f"写入文件失败: {str(e)}")
@@ -262,6 +267,42 @@ def save_status(save_path, downloaded):
 
 def Run(book_id, save_path):
     """运行下载"""
+    def signal_handler(sig, frame):
+        print("\n检测到程序中断，正在保存已下载内容...")
+        write_downloaded_chapters_in_order()
+        save_status(save_path, downloaded)
+        print(f"已保存 {len(downloaded)} 个章节的进度")
+        sys.exit(0)
+    
+    def write_downloaded_chapters_in_order():
+        """按章节顺序写入已下载内容"""
+        if not chapter_results:
+            return
+            
+        # 获取所有已下载的章节索引
+        downloaded_indices = sorted(chapter_results.keys())
+        #重写入
+        with open(output_file_path, 'w', encoding='utf-8') as f:
+            f.write(f"小说名: {name}\n作者: {author_name}\n内容简介: {description}\n\n")
+            
+            # 按顺序写入所有章节
+            for idx in range(len(chapters)):
+                if idx in chapter_results:
+                    result = chapter_results[idx]
+                    if result["api_title"]:
+                        title = f'{result["base_title"]} {result["api_title"]}'
+                    else:
+                        title = result["base_title"]
+                    f.write(f"{title}\n")
+                    f.write(result["content"] + '\n\n')
+                elif chapters[idx]["id"] in downloaded:
+                    continue
+                else:
+                    pass
+    
+    # 信号处理
+    signal.signal(signal.SIGINT, signal_handler)
+    
     try:
         headers = get_headers()
         
@@ -306,10 +347,9 @@ def Run(book_id, save_path):
         success_count = 0
         failed_chapters = []
         chapter_results = {}
-        remaining_chapters = todo_chapters.copy()
         lock = threading.Lock()
         
-        def download_task(chapter, book_id):
+        def download_task(chapter):
             """多线程下载任务"""
             nonlocal success_count
             try:
@@ -321,51 +361,51 @@ def Run(book_id, save_path):
                             "api_title": chapter_title,
                             "content": content
                         }
+                        downloaded.add(chapter["id"])
                         success_count += 1
-                        remaining_chapters.remove(chapter)
                 else:
-                    print(f"章节 {chapter['title']} 下载失败，将重试...")
+                    with lock:
+                        failed_chapters.append(chapter)
             except Exception as e:
-                print(f"章节 {chapter['title']} 下载异常: {str(e)}，将重试...")
+                print(f"章节 {chapter['title']} 下载异常: {str(e)}")
+                with lock:
+                    failed_chapters.append(chapter)
         
         # 持续尝试直到下载完成
         attempt = 1
-        while remaining_chapters:
-            print(f"\n第 {attempt} 次尝试，剩余 {len(remaining_chapters)} 个章节...")
+        while todo_chapters:
+            print(f"\n第 {attempt} 次尝试，剩余 {len(todo_chapters)} 个章节...")
             attempt += 1
             
-            # 剩余章节
-            current_batch = remaining_chapters.copy()
+            # 当前批次
+            current_batch = todo_chapters.copy()
             
             with ThreadPoolExecutor(max_workers=CONFIG["max_workers"]) as executor:
-                futures = [executor.submit(download_task, ch, book_id) for ch in current_batch]
+                futures = [executor.submit(download_task, ch) for ch in current_batch]
                 
                 with tqdm(total=len(current_batch), desc="下载进度") as pbar:
                     for future in as_completed(futures):
                         pbar.update(1)
             
-            if remaining_chapters:
+            # 按顺序写入已下载章节
+            write_downloaded_chapters_in_order()
+            save_status(save_path, downloaded)
+            
+            # 更新待下载列表
+            todo_chapters = failed_chapters.copy()
+            failed_chapters = []
+            
+            if todo_chapters:
                 time.sleep(1)
-
-        # 按章节顺序写入文件
-        with open(output_file_path, 'a', encoding='utf-8') as f:
-            for index in sorted(chapter_results.keys()):
-                result = chapter_results[index]
-                if result["api_title"]:
-                    title = f'{result["base_title"]} {result["api_title"]}'
-                else:
-                    title = result["base_title"]
-                f.write(f"{title}\n")
-                f.write(result["content"] + '\n\n')
-                downloaded.add(todo_chapters[index]["id"])
-
-        # 保存下载状态
-        save_status(save_path, downloaded)
 
         print(f"下载完成！成功下载 {success_count} 个章节")
 
     except Exception as e:
         print(f"运行过程中发生错误: {str(e)}")
+        # 在异常时也保存进度
+        if 'downloaded' in locals() and 'chapter_results' in locals():
+            write_downloaded_chapters_in_order()
+            save_status(save_path, downloaded)
 
 def main():
     print("""欢迎使用番茄小说下载器精简版！
