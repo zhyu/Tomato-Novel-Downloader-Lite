@@ -63,6 +63,11 @@ CFLAGS="-O0" pip install lxml
 
 先将代码以zip格式下载，之后解压到文件夹，接着运行“build-executable.yml”即可
 
+8.`怎么中断程序？`
+
+Ctrl+C中断程序（先按Ctrl再按C，多试几次就能中断程序了
+
+
 ## 注意事项（必看）
 由于使用的是api，所以未来不知道有哪一天突然失效，如果真的出现了，请立即在“Issues”页面中回复！
 
