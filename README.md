@@ -98,5 +98,7 @@ https://afdian.com/a/dlbaokanluntanos
 
 感谢来自[此项目](https://github.com/POf-L/Fanqie-novel-Downloader)的api！
 
+感谢来自Github用户@huangchaoabc提供[此项目](https://github.com/duongden/fanqienovel)的api！
+
 感谢所有赞助此程序的赞助者们！
 ***
