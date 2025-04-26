@@ -59,7 +59,11 @@ CFLAGS="-O0" pip install lxml
 
 7.`我无法正常运行代码，有没有可执行文件代替？`
 
-先将代码以zip格式下载，之后解压到文件夹，接着运行“build-executable.yml”即可
+[点击此处跳转到可执行文件安装页面](https://github.com/Dlmily/Tomato-Novel-Downloader-Lite/releases)
+
+**注意**：如果您在运行可执行文件时遇到了缺少Crypto库的情况，请先安装库：`pip install pycryptodome`
+
+然后再重新尝试
 
 8.`怎么中断程序？`
 
