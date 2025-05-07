@@ -61,10 +61,6 @@ CFLAGS="-O0" pip install lxml
 
 [点击此处跳转到可执行文件安装页面](https://github.com/Dlmily/Tomato-Novel-Downloader-Lite/releases)
 
-**注意**：如果您在运行可执行文件时遇到了缺少Crypto库的情况，请先安装库：`pip install pycryptodome`
-
-然后再重新尝试
-
 8.`怎么中断程序？`
 
 Ctrl+C中断程序（先按Ctrl再按C，多试几次就能中断程序了
