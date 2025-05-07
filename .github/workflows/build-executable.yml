@@ -28,7 +28,7 @@ jobs:
       - name: Install Dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pyinstaller requests bs4 fake-useragent tqdm urllib3
+          pip install pyinstaller -r requirements.txt
 
       - name: Build Executable
         run: |
@@ -68,7 +68,7 @@ jobs:
       - name: Install Dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pyinstaller requests bs4 fake-useragent tqdm urllib3
+          pip install pyinstaller -r requirements.txt
 
       - name: Build Executable
         run: |
@@ -114,7 +114,7 @@ jobs:
       - name: Install Dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pyinstaller requests bs4 fake-useragent tqdm urllib3
+          pip install pyinstaller -r requirements.txt
 
       - name: Build Executable
         run: |
@@ -156,7 +156,7 @@ jobs:
       - name: Install Dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pyinstaller requests bs4 fake-useragent tqdm urllib3
+          pip install pyinstaller -r requirements.txt
 
       - name: Build Executable
         run: |
